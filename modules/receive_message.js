@@ -1,13 +1,9 @@
+const Jimp = require("jimp");
 const bucketName = "psoirphotobucket";
 const queueURL = "https://sqs.eu-west-2.amazonaws.com/953234601553/RutkowskiQueue";
 var BreakException = {};
-
-// Load the AWS SDK for Node.js
 var AWS = require('aws-sdk');
-// Load credentials and set the region from the JSON file
 AWS.config.loadFromPath('./config.json');
-
-// Create an SQS service object
 var sqs = new AWS.SQS({apiVersion: '2017-08-30'});
 
 var params = {
@@ -33,6 +29,9 @@ sqs.receiveMessage(params, function (err, data) {
             case 1:
                 deletePhoto(JSON.parse(data.Messages[0].Body), data.Messages[0].ReceiptHandle);
                 break;
+            case 2:
+                rotateImage(JSON.parse(data.Messages[0].Body), data.Messages[0].ReceiptHandle);
+                break;
         }
 
     }
@@ -54,7 +53,6 @@ function deletePhoto(photos, receiptHandle) {
                     throw BreakException;
                 }
                 else {
-                    console.log();
                     messageDelete = true
                 }
             });
@@ -83,6 +81,63 @@ function deleteMessage(receiptHandle) {
             console.log("Delete Error", err);
         } else {
             console.log("Message Deleted", data);
+        }
+    });
+
+}
+
+function rotateImage(photos, receiptHandle) {
+
+    var counter = 0;
+
+    photos['photos'].forEach(function (element) {
+
+        Jimp.read("https://s3.eu-west-2.amazonaws.com/psoirphotobucket/" + element, function (err, image) {
+            if (err)
+                throw err;
+            image.rotate( 90 );
+            try {
+                image.getBuffer(image.getMIME(), (err, buffer) => {
+                    var s3Bucket = new AWS.S3({params: {Bucket: bucketName}});
+                    var newName = hasObject(element.Key, s3Bucket, 1);
+                    var data = {Key: newName, Body: buffer};
+                    s3Bucket.putObject(data, function (err, data) {
+                        if (err) {
+                            console.log('Error uploading data: ', data);
+
+                        } else {
+
+
+                            counter++;
+                            if (counter == photos.length - 1)
+                                deleteMessage(receiptHandle);
+                        }
+                    });
+
+                });
+            } catch (e) {
+                if (e !== BreakException)
+                    throw e;
+                else
+                deleteMessage(receiptHandle);
+            }
+        });
+    });
+
+}
+
+function hasObject(key, s3, namePropositionIterator) {
+
+    var params = {
+        Bucket: bucketName,
+        Key: key + namePropositionIterator
+    };
+
+    s3.headObject(params, function (err, metadata) {
+        if (err && err.code === 'NotFound') {
+            hasObject(key, s3, namePropositionIterator++)
+        } else {
+            return key + namePropositionIterator;
         }
     });
 
