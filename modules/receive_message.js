@@ -1,10 +1,10 @@
-const Jimp = require("jimp");
-const bucketName = "psoirphotobucket";
-const queueURL = "https://sqs.eu-west-2.amazonaws.com/953234601553/RutkowskiQueue";
-var BreakException = {};
 var AWS = require('aws-sdk');
 AWS.config.loadFromPath('./config.json');
-var sqs = new AWS.SQS({apiVersion: '2017-08-30'});
+var Const = require("./const");
+var Jimp = require("jimp");
+var sqs = new AWS.SQS({apiVersion: Const.API_VERSION});
+var s3 = new AWS.S3();
+var checkNewMessages = true;
 
 var params = {
     AttributeNames: [
@@ -14,57 +14,56 @@ var params = {
     MessageAttributeNames: [
         "All"
     ],
-    QueueUrl: queueURL,
+    QueueUrl: Const.messageQueue,
     VisibilityTimeout: 0,
     WaitTimeSeconds: 0
 };
 
-sqs.receiveMessage(params, function (err, data) {
-    if (err) {
-        console.log("Receive Error", err);
-    } else {
-        const numberType = Number(data.Messages[0].MessageAttributes["MessageType"].StringValue);
+setInterval(function () {
 
-        switch (numberType) {
-            case 1:
-                deletePhoto(JSON.parse(data.Messages[0].Body), data.Messages[0].ReceiptHandle);
-                break;
-            case 2:
-                rotateImage(JSON.parse(data.Messages[0].Body), data.Messages[0].ReceiptHandle);
-                break;
-        }
+    if (checkNewMessages) {
+        var i = 0;
 
+        sqs.receiveMessage(params, function (err, data) {
+            if (err)
+                console.log("Receive Error", err);
+            else {
+                if (data.Messages != null) {
+                    console.log(data.Messages);
+                    data.Messages.forEach(function (value) {
+                        i++;
+
+                        const numberType = Number(value.MessageAttributes["MessageType"].StringValue);
+
+                        switch (numberType) {
+                            case 1:
+                                deletePhoto(JSON.parse(value.Body));
+                                break;
+                            case 2:
+                                rotateImage(JSON.parse(value.Body));
+                                break;
+                            case 3:
+                                scaleImage(JSON.parse(value.Body));
+                                break;
+                        }
+
+                        //deleteMessage(value.ReceiptHandle);
+
+                    });
+                }
+            }
+        });
     }
-});
+}, 5 * 1000);
 
-function deletePhoto(photos, receiptHandle) {
-    var s3 = new AWS.S3();
-    deleteMessage(receiptHandle);
-    let messageDelete = false;
+function deletePhoto(photoKey) {
 
-    photos.forEach(function (element) {
+    var params = {Bucket: Const.bucketName, Key: photoKey};
 
-        var params = {Bucket: bucketName, Key: element};
-
-        try {
-            s3.deleteObject(params, function (err, data) {
-                if (err) {
-                    console.log(err, err.stack);
-                    throw BreakException;
-                }
-                else {
-                    messageDelete = true
-                }
-            });
-        } catch (e) {
-            if (e !== BreakException) throw e;
-            else messageDeleted = false;
-        }
-
-        if (messageDelete)
-            deleteMessage(receiptHandle);
+    s3.deleteObject(params, function (err, data) {
+        if (err)
+            console.log(err, err.stack);
     });
-
 
 }
 
@@ -72,73 +71,68 @@ function deletePhoto(photos, receiptHandle) {
 function deleteMessage(receiptHandle) {
 
     var deleteParams = {
-        QueueUrl: queueURL,
+        QueueUrl: Const.messageQueue,
         ReceiptHandle: receiptHandle
     };
 
     sqs.deleteMessage(deleteParams, function (err, data) {
-        if (err) {
+        if (err)
             console.log("Delete Error", err);
-        } else {
-            console.log("Message Deleted", data);
-        }
     });
 
 }
 
-function rotateImage(photos, receiptHandle) {
+function rotateImage(photoKey) {
 
-    var counter = 0;
+    var urlParams = {Bucket: Const.bucketName, Key: photoKey};
+    s3.getSignedUrl('getObject', urlParams, function (err, url) {
 
-    photos['photos'].forEach(function (element) {
+        console.log(url);
 
-        Jimp.read("https://s3.eu-west-2.amazonaws.com/psoirphotobucket/" + element, function (err, image) {
+        Jimp.read(url, function (err, image) {
             if (err)
                 throw err;
-            image.rotate( 90 );
-            try {
-                image.getBuffer(image.getMIME(), (err, buffer) => {
-                    var s3Bucket = new AWS.S3({params: {Bucket: bucketName}});
-                    var newName = hasObject(element.Key, s3Bucket, 1);
-                    var data = {Key: newName, Body: buffer};
-                    s3Bucket.putObject(data, function (err, data) {
-                        if (err) {
-                            console.log('Error uploading data: ', data);
-
-                        } else {
-
-
-                            counter++;
-                            if (counter == photos.length - 1)
-                                deleteMessage(receiptHandle);
-                        }
-                    });
+            image.rotate(90);
+            image.getBuffer(image.getMIME(), (err, buffer) => {
+                var newImageData = {
+                    Key: Const.getUniqueSQSName(),
+                    Body: buffer
+                };
+                s3.putObject(newImageData, function (err, data) {
+                    if (err)
+                        console.log('Error uploading data: ', data);
 
                 });
-            } catch (e) {
-                if (e !== BreakException)
-                    throw e;
-                else
-                deleteMessage(receiptHandle);
-            }
+
+            });
         });
+
     });
 
 }
 
-function hasObject(key, s3, namePropositionIterator) {
+function scaleImage(photoKey) {
 
-    var params = {
-        Bucket: bucketName,
-        Key: key + namePropositionIterator
-    };
+    var urlParams = {Bucket: Const.bucketName, Key: photoKey};
+    s3.getSignedUrl('getObject', urlParams, function (err, url) {
+        Jimp.read(url, function (err, image) {
+            if (err)
+                throw err;
+            image.scale(2, 2);
+            image.getBuffer(image.getMIME(), (err, buffer) => {
+                var newImageData = {
+                    Key: Const.getUniqueSQSName(),
+                    Body: buffer
+                };
+                s3.putObject(newImageData, function (err, data) {
+                    if (err)
+                        console.log('Error uploading data: ', data);
 
-    s3.headObject(params, function (err, metadata) {
-        if (err && err.code === 'NotFound') {
-            hasObject(key, s3, namePropositionIterator++)
-        } else {
-            return key + namePropositionIterator;
-        }
+                });
+            });
+
+        });
+
     });
 
 }
