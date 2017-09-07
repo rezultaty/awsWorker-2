@@ -24,8 +24,9 @@ setInterval(function () {
     if (checkNewMessages) {
 
         sqs.receiveMessage(params, function (err, data) {
+
             if (err)
-                console.log("Receive Error", err);
+                Const.putIntoLogDB("Receive Error: " + err);
             else {
                 if (data.Messages != null) {
                     data.Messages.forEach(function (value) {
@@ -62,9 +63,7 @@ function deleteMessage(receiptHandle) {
 
     sqs.deleteMessage(deleteParams, function (err, data) {
         if (err)
-            console.log("Delete Error", err);
-        else
-            console.log("Deleted");
+            Const.putIntoLogDB("Delete error: " + err);
     });
 
 }
@@ -75,7 +74,7 @@ function deletePhoto(photoKey) {
 
     s3.deleteObject(params, function (err, data) {
         if (err)
-            console.log(err, err.stack);
+            Const.putIntoLogDB("Error while deleting local photo: " + err);
     });
 
 }
@@ -87,13 +86,13 @@ function rotateImage(photoKey) {
 
         Jimp.read(url, function (err, image) {
             if (err)
-                throw err;
+                Const.putIntoLogDB("Error read photo: " + err);
 
             image.rotate(90);
             image.getBuffer(image.getMIME(), (err, buffer) => {
 
                 if (err)
-                    console.log(err);
+                    Const.putIntoLogDB("Error while rotating photo: " + err);
                 else {
                     
                     var newImageData = {
@@ -104,9 +103,7 @@ function rotateImage(photoKey) {
 
                     s3.putObject(newImageData, function (err, data) {
                         if (err)
-                            console.log('Error uploading rotated photo: ', err, data);
-                        else
-                            console.log('Complete');
+                            Const.putIntoLogDB("Error uploading rotated photo: " + err);
                     });
                 }
 
@@ -121,13 +118,13 @@ function scaleImage(photoKey) {
     s3.getSignedUrl('getObject', urlParams, function (err, url) {
         Jimp.read(url, function (err, image) {
             if (err)
-                throw err;
+                Const.putIntoLogDB("Error read photo: " + err);
 
             image.scale(2, 2);
             image.getBuffer(image.getMIME(), (err, buffer) => {
 
                 if (err)
-                    console.log(err);
+                    Const.putIntoLogDB("Error while scaling photo: " + err);
                 else {
 
                     var newImageData = {
@@ -138,9 +135,7 @@ function scaleImage(photoKey) {
 
                     s3.putObject(newImageData, function (err, data) {
                         if (err)
-                            console.log('Error uploading scaled photo: ', err, data);
-                        else
-                            console.log('Complete');
+                            Const.putIntoLogDB("Error uploading scaled photo: " + err);
                     });
                 }
 

@@ -8,8 +8,40 @@
         });
         return uuid;
     },
+    putIntoLogDB: function (message) {
+
+        var AWS = require('aws-sdk');
+        AWS.config.loadFromPath('./config.json');
+        var dynamodb = new AWS.DynamoDB();
+
+        var params = {
+            Item: {
+                "GUID": {
+                    S: this.getUniqueSQSName()
+                }, 
+                "timestamp": {
+                    S: String(Date.now())
+                }, 
+
+                "Message": {
+                    S: "Worker; " + message
+                }
+            },
+            ReturnConsumedCapacity: "TOTAL",
+            TableName: this.logTableName
+        };
+        dynamodb.putItem(params, function (err, data) {
+
+            
+            console.log(err);           // successful response
+            
+
+        });
+
+    },
     bucketName: "psoirphotobucket",
     messageQueue: "https://sqs.eu-west-2.amazonaws.com/953234601553/RutkowskiQueue",
+    logTableName: "psoirDB",
 
     /*SQS values*/
     DELETE_TYPE: "1",
