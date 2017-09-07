@@ -2,23 +2,25 @@ var AWS = require('aws-sdk');
 AWS.config.loadFromPath('./config.json');
 var Const = require("./const");
 var Jimp = require("jimp");
-var sqs = new AWS.SQS({ apiVersion: Const.API_VERSION });
+var sqs = new AWS.SQS({apiVersion: Const.API_VERSION});
 var s3 = new AWS.S3();
-
-var jobIsDone = true;
 
 var params = {
     MaxNumberOfMessages: 10,
     QueueUrl: Const.messageQueue,
     VisibilityTimeout: 10,
-    WaitTimeSeconds: 10
+    WaitTimeSeconds: 10,
+    AttributeNames: [
+        "All"
+    ],
+    MessageAttributeNames: [
+        'All'
+    ]
 };
 
 var receiveMessages = function () {
 
     sqs.receiveMessage(params, function (err, data) {
-        jobIsDone = false;
-        var i = 0;
 
         if (err)
             Const.putIntoLogDB("Receive Error: " + err);
@@ -26,27 +28,40 @@ var receiveMessages = function () {
             if (data.Messages) {
                 data.Messages.forEach(function (value) {
 
-                    console.log(value.ReceiptHandle);
+                    if (Number(value["Attributes"].ApproximateReceiveCount) <= 1) {
 
-                    const numberType = Number(value.MessageAttributes["MessageType"].StringValue);
-                    deleteMessage(value.ReceiptHandle);
+                        const numberType = value.MessageAttributes["MessageType"].StringValue;
 
-                    switch (numberType) {
-                        case Const.DELETE_TYPE:
-                            deletePhoto(JSON.parse(value.Body));
-                            break;
-                        case Const.ROTATE_TYPE:
-                            rotateImage(JSON.parse(value.Body));
-                            break;
-                        case Const.SCALE_TYPE:
-                            scaleImage(JSON.parse(value.Body));
-                            break;
+                        switch (numberType) {
+                            case Const.DELETE_TYPE:
+                                console.log("DELETE");
+                                deletePhoto(JSON.parse(value.Body));
+                                break;
+                            case Const.ROTATE_TYPE:
+                                console.log("ROTATE");
+                                rotateImage(JSON.parse(value.Body));
+                                break;
+                            case Const.SCALE_TYPE:
+                                console.log("SCALE");
+                                scaleImage(JSON.parse(value.Body));
+                                break;
+                        }
+
+                        var deleteParams = {
+                            QueueUrl: Const.messageQueue,
+                            ReceiptHandle: value.ReceiptHandle
+                        };
+
+                        sqs.deleteMessage(deleteParams, function (err, data) {
+                            if (err)
+                                Const.putIntoLogDB("Delete error: " + err);
+                        });
                     }
 
-                    deleteMessage(value.ReceiptHandle);
                 });
 
                 receiveMessages();
+
             } else {
                 setTimeout(function () {
                     console.log("test");
@@ -56,27 +71,11 @@ var receiveMessages = function () {
         }
     });
 
-}
-
-function deleteMessage(receiptHandle) {
-
-    var deleteParams = {
-        QueueUrl: Const.messageQueue,
-        ReceiptHandle: receiptHandle
-    };
-
-    sqs.deleteMessage(deleteParams, function (err, data) {
-        if (err)
-            Const.putIntoLogDB("Delete error: " + err);
-        else
-            console.log(data);
-    });
-
-}
+};
 
 function deletePhoto(photoKey) {
 
-    var params = { Bucket: Const.bucketName, Key: photoKey };
+    var params = {Bucket: Const.bucketName, Key: photoKey};
 
     s3.deleteObject(params, function (err, data) {
         if (err)
@@ -100,11 +99,11 @@ function rotateImage(photoKey) {
                 if (err)
                     Const.putIntoLogDB("Error while rotating photo: " + err);
                 else {
-                    
+
                     var newImageData = {
                         Bucket: Const.bucketName,
                         Key: Const.getUniqueSQSName(),
-                        Body: String(buffer)
+                        Body: buffer
                     };
 
                     s3.putObject(newImageData, function (err, data) {
@@ -122,15 +121,16 @@ function scaleImage(photoKey) {
 
     var urlParams = {Bucket: Const.bucketName, Key: photoKey};
     s3.getSignedUrl('getObject', urlParams, function (err, url) {
+
         Jimp.read(url, function (err, image) {
             if (err)
                 Const.putIntoLogDB("Error read photo: " + err);
 
-            image.scale(2, 2);
+            image.scale(5);
             image.getBuffer(image.getMIME(), (err, buffer) => {
 
                 if (err)
-                    Const.putIntoLogDB("Error while scaling photo: " + err);
+                    Const.putIntoLogDB("Error while rotating photo: " + err);
                 else {
 
                     var newImageData = {
@@ -141,7 +141,7 @@ function scaleImage(photoKey) {
 
                     s3.putObject(newImageData, function (err, data) {
                         if (err)
-                            Const.putIntoLogDB("Error uploading scaled photo: " + err);
+                            Const.putIntoLogDB("Error uploading rotated photo: " + err);
                     });
                 }
 
