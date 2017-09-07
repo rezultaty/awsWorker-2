@@ -4,55 +4,59 @@ var Const = require("./const");
 var Jimp = require("jimp");
 var sqs = new AWS.SQS({ apiVersion: Const.API_VERSION });
 var s3 = new AWS.S3();
-var checkNewMessages = true;
+
+var jobIsDone = true;
 
 var params = {
-    AttributeNames: [
-        "SentTimestamp"
-    ],
-    MaxNumberOfMessages: 1,
-    MessageAttributeNames: [
-        "All"
-    ],
+    MaxNumberOfMessages: 10,
     QueueUrl: Const.messageQueue,
-    VisibilityTimeout: 0,
-    WaitTimeSeconds: 0
+    VisibilityTimeout: 10,
+    WaitTimeSeconds: 10
 };
 
-setInterval(function () {
+var receiveMessages = function () {
 
-    if (checkNewMessages) {
+    sqs.receiveMessage(params, function (err, data) {
+        jobIsDone = false;
+        var i = 0;
 
-        sqs.receiveMessage(params, function (err, data) {
+        if (err)
+            Const.putIntoLogDB("Receive Error: " + err);
+        else {
+            if (data.Messages) {
+                data.Messages.forEach(function (value) {
 
-            if (err)
-                Const.putIntoLogDB("Receive Error: " + err);
-            else {
-                if (data.Messages != null) {
-                    data.Messages.forEach(function (value) {
+                    console.log(value.ReceiptHandle);
 
-                        const numberType = Number(value.MessageAttributes["MessageType"].StringValue);
-                        deleteMessage(value.ReceiptHandle);
+                    const numberType = Number(value.MessageAttributes["MessageType"].StringValue);
+                    deleteMessage(value.ReceiptHandle);
 
-                        switch (numberType) {
-                            case Const.DELETE_TYPE:
-                                deletePhoto(JSON.parse(value.Body));
-                                break;
-                            case Const.ROTATE_TYPE:
-                                rotateImage(JSON.parse(value.Body));
-                                break;
-                            case Const.SCALE_TYPE:
-                                scaleImage(JSON.parse(value.Body));
-                                break;
-                        }
+                    switch (numberType) {
+                        case Const.DELETE_TYPE:
+                            deletePhoto(JSON.parse(value.Body));
+                            break;
+                        case Const.ROTATE_TYPE:
+                            rotateImage(JSON.parse(value.Body));
+                            break;
+                        case Const.SCALE_TYPE:
+                            scaleImage(JSON.parse(value.Body));
+                            break;
+                    }
 
-                    });
-                }
+                    deleteMessage(value.ReceiptHandle);
+                });
+
+                receiveMessages();
+            } else {
+                setTimeout(function () {
+                    console.log("test");
+                    receiveMessages()
+                }, Const.receiveInterval);
             }
-        });
-    }
-}, 5 * 1000);
+        }
+    });
 
+}
 
 function deleteMessage(receiptHandle) {
 
@@ -64,6 +68,8 @@ function deleteMessage(receiptHandle) {
     sqs.deleteMessage(deleteParams, function (err, data) {
         if (err)
             Const.putIntoLogDB("Delete error: " + err);
+        else
+            console.log(data);
     });
 
 }
@@ -143,3 +149,5 @@ function scaleImage(photoKey) {
         });
     });
 }
+
+receiveMessages();

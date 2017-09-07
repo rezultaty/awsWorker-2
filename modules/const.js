@@ -31,17 +31,13 @@
             TableName: this.logTableName
         };
         dynamodb.putItem(params, function (err, data) {
-
-            
-            console.log(err);           // successful response
-            
-
         });
 
     },
     bucketName: "psoirphotobucket",
     messageQueue: "https://sqs.eu-west-2.amazonaws.com/953234601553/RutkowskiQueue",
     logTableName: "psoirDB",
+    receiveInterval: 1 * 1000,
 
     /*SQS values*/
     DELETE_TYPE: "1",
