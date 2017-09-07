@@ -9,7 +9,7 @@ var params = {
     MaxNumberOfMessages: 10,
     QueueUrl: Const.messageQueue,
     VisibilityTimeout: 10,
-    WaitTimeSeconds: 10,
+    WaitTimeSeconds: 0,
     AttributeNames: [
         "All"
     ],
@@ -25,6 +25,7 @@ var receiveMessages = function () {
         if (err)
             Const.putIntoLogDB("Receive Error: " + err);
         else {
+
             if (data.Messages) {
                 data.Messages.forEach(function (value) {
 
@@ -34,15 +35,12 @@ var receiveMessages = function () {
 
                         switch (numberType) {
                             case Const.DELETE_TYPE:
-                                console.log("DELETE");
                                 deletePhoto(JSON.parse(value.Body));
                                 break;
                             case Const.ROTATE_TYPE:
-                                console.log("ROTATE");
                                 rotateImage(JSON.parse(value.Body));
                                 break;
                             case Const.SCALE_TYPE:
-                                console.log("SCALE");
                                 scaleImage(JSON.parse(value.Body));
                                 break;
                         }
@@ -59,12 +57,10 @@ var receiveMessages = function () {
                     }
 
                 });
-
                 receiveMessages();
 
             } else {
                 setTimeout(function () {
-                    console.log("test");
                     receiveMessages()
                 }, Const.receiveInterval);
             }
