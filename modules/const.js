@@ -34,9 +34,9 @@
         });
 
     },
-    bucketName: "psoirphotobucket",
-    messageQueue: "https://sqs.eu-west-2.amazonaws.com/953234601553/RutkowskiQueue",
-    logTableName: "psoirDB",
+    bucketName: "psoirbucket",
+    messageQueue: "https://sqs.eu-west-2.amazonaws.com/833105395622/psoirqueue",
+    logTableName: "psoirdynamodb",
     receiveInterval: 5 * 1000,
 
     /*SQS values*/

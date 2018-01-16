@@ -29,7 +29,7 @@ var receiveMessages = function () {
             if (data.Messages) {
                 data.Messages.forEach(function (value) {
 
-                    if (Number(value["Attributes"].ApproximateReceiveCount) <= 1) {
+                    if (Number(value["Attributes"].ApproximateReceiveCount) <= 5) {
 
                         const numberType = value.MessageAttributes["MessageType"].StringValue;
 
