@@ -19,7 +19,7 @@ var params = {
 };
 
 var receiveMessages = function () {
-
+    console.log("test");
     sqs.receiveMessage(params, function (err, data) {
 
         if (err)
